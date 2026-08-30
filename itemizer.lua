@@ -62,6 +62,73 @@ bag_name_to_id[temporary.api] = nil
 bag_name_to_id[temporary.ja] = nil
 all_bags_api[temporary.api] = nil
 
+-- Nomad/Pilgrim Moogle support, adapted from Windower Organizer's access handling.
+-- Interacting with one of these NPCs exposes Mog House bags without displaying the game menu.
+local nomad_moogle_names = {'Nomad Moogle', 'Pilgrim Moogle'}
+local nomad_moogles = {}
+local nomad_moogle_poked = false
+local block_nomad_moogle_menu = false
+
+local function clear_nomad_moogles()
+    nomad_moogles = {}
+    nomad_moogle_poked = false
+    block_nomad_moogle_menu = false
+end
+
+local function poke_nomad_moogle(npc)
+    local packet = packets.new('outgoing', 0x1A, {
+        ['Target'] = npc.id,
+        ['Target Index'] = npc.index,
+    })
+
+    nomad_moogle_poked = true
+    block_nomad_moogle_menu = true
+    packets.inject(packet)
+
+    repeat
+        coroutine.sleep(0.4)
+    until not block_nomad_moogle_menu
+end
+
+local function nomad_moogle()
+    if #nomad_moogles == 0 then
+        for _, name in ipairs(nomad_moogle_names) do
+            local npcs = windower.ffxi.get_mob_list(name)
+            for index in pairs(npcs) do
+                table.insert(nomad_moogles, index)
+            end
+        end
+    end
+
+    local player = windower.ffxi.get_mob_by_target('me')
+    if not player then
+        return false
+    end
+
+    for _, moogle_index in ipairs(nomad_moogles) do
+        local moogle = windower.ffxi.get_mob_by_index(moogle_index)
+        if moogle and (moogle.x - player.x)^2 + (moogle.y - player.y)^2 < 36 then
+            if not nomad_moogle_poked then
+                poke_nomad_moogle(moogle)
+            end
+            return moogle.name
+        end
+    end
+
+    return false
+end
+
+windower.register_event('incoming chunk', function(id)
+    if id == 0x02E and block_nomad_moogle_menu then
+        block_nomad_moogle_menu = false
+        return true
+    end
+end)
+
+windower.register_event('zone change', function()
+    clear_nomad_moogles()
+end)
+
 --Added this function for first load on new version. Because of the newly added features that weren't there before.
 windower.register_event("load", "login", function()
     if not windower.ffxi.get_info().logged_in then
@@ -78,36 +145,51 @@ windower.register_event("load", "login", function()
 end)
 
 find_items = function(ids, bag, limit)
-    local res = S{}
+    local result = S{}
     local found = 0
 
-    for bag_index, bag_name in all_bags_api:filter(table.get-{'enabled'} .. windower.ffxi.get_bag_info):it() do
-        if not bag or bag_index == bag then
-            for _, item in ipairs(windower.ffxi.get_items(bag_index)) do
-                if ids:contains(item.id) then
-                    local count = limit and math.min(limit, item.count) or item.count
-                    found = found + count
+    local function search_enabled_bags()
+        for bag_index, bag_name in all_bags_api:filter(table.get-{'enabled'} .. windower.ffxi.get_bag_info):it() do
+            if not bag or bag_index == bag then
+                for _, item in ipairs(windower.ffxi.get_items(bag_index)) do
+                    if ids:contains(item.id) then
+                        local count = limit and math.min(limit, item.count) or item.count
+                        found = found + count
 
-                    res:add({
-                        bag = bag_index,
-                        slot = item.slot,
-                        count = count,
-                        id = item.id,
-                    })
+                        result:add({
+                            bag = bag_index,
+                            slot = item.slot,
+                            count = count,
+                            id = item.id,
+                        })
 
-                    if limit then
-                        limit = limit - count
+                        if limit then
+                            limit = limit - count
 
-                        if limit == 0 then
-                            return res, found
+                            if limit == 0 then
+                                return true
+                            end
                         end
                     end
                 end
             end
         end
+        return false
     end
 
-    return res, found
+    if search_enabled_bags() then
+        return result, found
+    end
+
+    -- If no specific bag was requested and nothing was found, a nearby Nomad/Pilgrim
+    -- Moogle may expose additional Safe/Locker bags. Poke it once and search again.
+    if not bag and found == 0 and not windower.ffxi.get_info().mog_house and nomad_moogle() then
+        result = S{}
+        found = 0
+        search_enabled_bags()
+    end
+
+    return result, found
 end
 
 windower.register_event("addon command", function(command, arg2, ...)
@@ -169,10 +251,21 @@ local function validate_bag(bag_name, purpose)
         error(('Specify a valid %s bag.'):format(purpose))
         return nil
     end
+
+    if windower.ffxi.get_bag_info(bag_id).enabled then
+        return bag_id
+    end
+
+    local bag = res.bags[bag_id]
+    if bag and bag.access == 'Mog House' and bag.english ~= 'Storage' and not windower.ffxi.get_info().mog_house then
+        nomad_moogle()
+    end
+
     if not windower.ffxi.get_bag_info(bag_id).enabled then
         error(windower.from_shift_jis('%s currently not enabled':format(res.bags[bag_id].name)))
         return nil
     end
+
     return bag_id
 end
 
