@@ -129,6 +129,35 @@ windower.register_event('zone change', function()
     clear_nomad_moogles()
 end)
 
+local function is_nomad_moogle_bag(bag_id)
+    local bag = res.bags[bag_id]
+    return bag and bag.access == 'Mog House' and bag.english ~= 'Storage'
+end
+
+local function bag_is_accessible(bag_id, allow_nomad)
+    local bag_info = windower.ffxi.get_bag_info(bag_id)
+    local bag = res.bags[bag_id]
+    if not bag_info or not bag then
+        return false
+    end
+
+    if bag_info.enabled then
+        return true
+    end
+
+    if bag.access == 'Mog House' then
+        if windower.ffxi.get_info().mog_house then
+            return true
+        end
+
+        if allow_nomad and bag.english ~= 'Storage' and nomad_moogle() then
+            return true
+        end
+    end
+
+    return false
+end
+
 --Added this function for first load on new version. Because of the newly added features that weren't there before.
 windower.register_event("load", "login", function()
     if not windower.ffxi.get_info().logged_in then
@@ -148,45 +177,58 @@ find_items = function(ids, bag, limit)
     local result = S{}
     local found = 0
 
-    local function search_enabled_bags()
-        for bag_index, bag_name in all_bags_api:filter(table.get-{'enabled'} .. windower.ffxi.get_bag_info):it() do
-            if not bag or bag_index == bag then
-                for _, item in ipairs(windower.ffxi.get_items(bag_index)) do
-                    if ids:contains(item.id) then
-                        local count = limit and math.min(limit, item.count) or item.count
-                        found = found + count
+    local function search_bag(bag_index)
+        local bag_items = windower.ffxi.get_items(bag_index)
+        if not bag_items then
+            return false
+        end
 
-                        result:add({
-                            bag = bag_index,
-                            slot = item.slot,
-                            count = count,
-                            id = item.id,
-                        })
+        for _, item in ipairs(bag_items) do
+            if ids:contains(item.id) then
+                local count = limit and math.min(limit, item.count) or item.count
+                found = found + count
 
-                        if limit then
-                            limit = limit - count
+                result:add({
+                    bag = bag_index,
+                    slot = item.slot,
+                    count = count,
+                    id = item.id,
+                })
 
-                            if limit == 0 then
-                                return true
-                            end
-                        end
+                if limit then
+                    limit = limit - count
+                    if limit == 0 then
+                        return true
                     end
                 end
             end
         end
+
         return false
     end
 
-    if search_enabled_bags() then
+    -- Explicit source bags have already been validated. Search them directly rather
+    -- than requiring get_bag_info().enabled, which remains false at Nomad Moogles.
+    if bag then
+        search_bag(bag)
         return result, found
     end
 
-    -- If no specific bag was requested and nothing was found, a nearby Nomad/Pilgrim
-    -- Moogle may expose additional Safe/Locker bags. Poke it once and search again.
-    if not bag and found == 0 and not windower.ffxi.get_info().mog_house and nomad_moogle() then
-        result = S{}
-        found = 0
-        search_enabled_bags()
+    -- Preserve Itemizer's normal behavior by searching ordinary enabled bags first.
+    for bag_index, bag_name in all_bags_api:filter(table.get-{'enabled'} .. windower.ffxi.get_bag_info):it() do
+        if search_bag(bag_index) then
+            return result, found
+        end
+    end
+
+    -- If nothing was found, a nearby Nomad/Pilgrim Moogle can expose Mog House bags.
+    -- These bags do not flip Windower's enabled flag, so search them explicitly.
+    if found == 0 and not windower.ffxi.get_info().mog_house and nomad_moogle() then
+        for bag_name, bag_index in all_bags_api:it() do
+            if is_nomad_moogle_bag(bag_index) and search_bag(bag_index) then
+                return result, found
+            end
+        end
     end
 
     return result, found
@@ -252,21 +294,12 @@ local function validate_bag(bag_name, purpose)
         return nil
     end
 
-    if windower.ffxi.get_bag_info(bag_id).enabled then
+    if bag_is_accessible(bag_id, true) then
         return bag_id
     end
 
-    local bag = res.bags[bag_id]
-    if bag and bag.access == 'Mog House' and bag.english ~= 'Storage' and not windower.ffxi.get_info().mog_house then
-        nomad_moogle()
-    end
-
-    if not windower.ffxi.get_bag_info(bag_id).enabled then
-        error(windower.from_shift_jis('%s currently not enabled':format(res.bags[bag_id].name)))
-        return nil
-    end
-
-    return bag_id
+    error(windower.from_shift_jis('%s currently not enabled':format(res.bags[bag_id].name)))
+    return nil
 end
 
 windower.register_event('unhandled command', function(command, ...)
