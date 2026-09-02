@@ -1,6 +1,6 @@
 _addon.name = 'Itemizer'
 _addon.author = 'Ihina'
-_addon.version = '3.3.2.2'
+_addon.version = '3.3.2.3'
 _addon.command = 'itemizer'
 
 require('luau')
@@ -234,7 +234,7 @@ find_items = function(ids, bag, limit)
     -- still needs items. For //gets (limit=nil), this also means "all" really spans
     -- ordinary bags plus Safe/Safe2/Locker instead of stopping after the first family.
     if (not limit or limit > 0) and not windower.ffxi.get_info().mog_house and nomad_moogle() then
-        for bag_name, bag_index in all_bags_api:it() do
+        for bag_index, bag_name in all_bags_api:it() do
             if is_nomad_moogle_bag(bag_index) and search_bag(bag_index) then
                 return result, found
             end
@@ -258,7 +258,7 @@ windower.register_event("addon command", function(command, arg2, ...)
   4. UseUniversalTool <spell> - Toggles use of only universal tools for the given spell. Do not include :ichi or :ni suffixes.
      i.e. uut katon  - will toggle katon either true or false depending on your setting
      all defaulted false.
-  5. AutoStack - Toggles utomatically stacking items in the destination bag (shortened as, defaults true)
+  5. AutoStack - Toggles utomatically stacking items when moving items to non-Inventory bags. Default: true.
   6. Help - Shows this menu.]]
         for _, line in ipairs(helptext:split('\n')) do
             log(line)
@@ -393,7 +393,7 @@ windower.register_event('unhandled command', function(command, ...)
     elseif command == 'stack' then
         log('Stacking items in all currently accessible bags.')
 
-        for bag_index in all_bags_api:filter(table.get-{'enabled'} .. windower.ffxi.get_bag_info):it() do
+        for bag_index, bag_name in all_bags_api:filter(table.get-{'enabled'} .. windower.ffxi.get_bag_info):it() do
             windower.ffxi.stack_items(bag_index)
         end 
     end
