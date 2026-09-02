@@ -1,56 +1,79 @@
-#Itemizer
+# Itemizer
 
-Provides a chat/console interface for moving items around between bags. Optionally also automatically fetches items into the main inventory before item usage (both regular usage and Ninjutsu tools).
+Provides a chat/console interface for moving items around between bags. Optionally also automatically fetches items into the main inventory before item usage, including regular item usage and Ninjutsu tools.
+
+## Inventory Gremlin deployment note
+
+The RemoteXI inventory-maintenance workflow uses this repository, but **Nomad/Pilgrim Moogle support is not currently on `main`**.
+
+For the custom build used by the FFXI Inventory Gremlin workflow, use:
+
+- repository: `n0gr1p/itemizer`
+- branch: `nomad-moogle-support`
+
+That branch adds proven `get` / `put` access to Mog Safe, Mog Safe 2, and Mog Locker while standing near a Nomad Moogle or Pilgrim Moogle. `Storage` remains excluded because Nomad/Pilgrim Moogles do not expose Mog Storage.
+
+The canonical operational documentation lives in `n0gr1p/RemoteXI` on `master`:
+
+- `docs/AI_INVENTORY_WORKFLOW.md`
+- `docs/INVENTORY_INTERACTION_CAPABILITIES.md`
+- `docs/INVENTORY_MAINTENANCE_RUNBOOK.md`
 
 ### Commands
+
 ```
 itemizer delay <delay>
 ```
 
-Sets the delay for pulling items into your inventory to 'delay'. (Default 0.5)
+Sets the delay for pulling items into your inventory to `delay`. Default: 0.5.
 
 ```
-itemizer autoitems (shortened: ai)
+itemizer autoitems
 ```
 
-Toggles the auto-pulling of items from bags if not in your inventory. (Default: True)
+Shortened: `ai`. Toggles auto-pulling items from bags when not in Inventory. Default: true.
 
 ```
-itemizer autostack (shortened: as)
+itemizer autostack
 ```
 
-Toggles the auto-stacking of items when moving items to non-inventory bags. (Default: True)
+Shortened: `as`. Toggles auto-stacking items when moving items to non-Inventory bags. Default: true.
 
 ```
-itemizer autoninjatools (shortened: ant)
+itemizer autoninjatools
 ```
 
-Toggles the auto-pulling of ninja tools from bags when not in your bag. Prioritizes specific tools then moves to universal unless the next command is used to set the tools to only use universal tools for specific spells. (Default: True)
+Shortened: `ant`. Toggles automatically getting ninja tools. Specific tools are preferred before universal tools unless configured otherwise.
 
 ```
-itemizer useuniversaltools <spell> (shortened: uut)
+itemizer useuniversaltools <spell>
 ```
 
-Toggles the use of only universal tools for `spell`. Does not use :ichi or :ni suffixes. (Default: False for all spells)  
-For Example:  itemiser uut katon
+Shortened: `uut`. Toggles use of only universal tools for the given spell. Do not include `:ichi` or `:ni` suffixes.
+
+Example:
+
+```
+itemizer uut katon
+```
 
 ```
 get <item> [bag] [count]
 ```
 
-Retrieves the specified item from the specified bag. If `bag` is omitted it will fetch the item from any accessible bag, if available. If `count` is omitted only a single item is fetched. If `count` is `all` all items will be fetched.
+Retrieves the specified item from the specified bag. If `bag` is omitted, Itemizer searches accessible bags. If `count` is omitted, one item is fetched. If `count` is `all`, all matching items are fetched.
 
 ```
 put <item> <bag> [count]
 ```
 
-Places the specified item into the specified bag. If `count` is omitted only a single item is put away. If `count` is `all` all items will be put away.
+Places the specified item into the specified bag. If `count` is omitted, one item is moved. If `count` is `all`, all matching items are moved.
 
 ```
 move <item> [source bag] <destination bag> [count]
 ```
 
-Moves the specified item from the specified source bag to the specified destination bag. If `source bag` is omitted it will fetch the item from any accessible bag, if available. If `count` is omitted only a single item is fetched. If `count` is `all` all items will be fetched.
+Moves the specified item from the source bag to the destination bag. The source bag is optional.
 
 ```
 gets <item> [bag]
@@ -58,11 +81,11 @@ puts <item> <bag>
 moves <item> [source bag] <destination bag>
 ```
 
-Same as the `get`, `put` and `move` variants if `all` was specified for the `count` argument.
+Equivalent to the `get`, `put`, and `move` variants with `all` specified for count.
 
 ### Notes
 
-Both the full name and the abbrevited names are valid entries. Wildcards are allowed. For example, `//get *ore` would fetch all ores from all accessible bags to the main inventory.
+Both full bag names and abbreviated names are valid. Wildcards are allowed. For example, `//get *ore` fetches matching ores from accessible bags into Inventory.
 
 ### Examples
 
