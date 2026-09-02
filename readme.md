@@ -38,6 +38,16 @@ The nearby Moogle must be within approximately 6 yalms. This is NPC-backed acces
 
 The implementation silently interacts with the nearby Nomad/Pilgrim Moogle, suppresses the normal menu, and then performs the Itemizer movement.
 
+### Nomad interaction-session behavior
+
+Nomad/Pilgrim access is treated as an **interaction session**, not as a permanent capability that stays valid for the rest of the zone visit.
+
+Itemizer 3.3.2.2 refreshes that session at the start of each `get` / `put` / `move` operation that needs Nomad-backed access. Multiple Mog-House bag checks within the same Itemizer operation share the fresh interaction, but a later command does not assume an older poke is still valid.
+
+This matters because a Nomad interaction can become stale while the character remains in the same zone. Caching a single successful poke until `zone change` caused later bag-agnostic `get` / `gets` commands to report that items in Safe/Safe2 were not found.
+
+Bag-agnostic searches also continue into Nomad-backed bags whenever the requested count has not yet been satisfied. In particular, `//gets <item>` now searches ordinary enabled bags **and** Safe/Safe2/Locker instead of skipping Nomad-backed copies merely because another copy was found in a normal bag.
+
 The explicitly proven Nomad workflow is `get` / `put` through main Inventory. Direct `move` between arbitrary Nomad-backed bags should be verified before depending on it in an automated workflow.
 
 ### RemoteXI inventory workflow
