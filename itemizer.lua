@@ -1,6 +1,6 @@
 _addon.name = 'Itemizer'
 _addon.author = 'Ihina'
-_addon.version = '3.3.2.1'
+_addon.version = '3.3.2.2'
 _addon.command = 'itemizer'
 
 require('luau')
@@ -66,13 +66,20 @@ all_bags_api[temporary.api] = nil
 -- Interacting with one of these NPCs exposes Mog House bags without displaying the game menu.
 local nomad_moogle_names = {'Nomad Moogle', 'Pilgrim Moogle'}
 local nomad_moogles = {}
-local nomad_moogle_poked = false
+local nomad_moogle_ready = false
 local block_nomad_moogle_menu = false
 
 local function clear_nomad_moogles()
     nomad_moogles = {}
-    nomad_moogle_poked = false
+    nomad_moogle_ready = false
     block_nomad_moogle_menu = false
+end
+
+-- Nomad/Pilgrim bag visibility is an interaction session, not a permanent zone flag.
+-- Start each Itemizer operation assuming the session must be refreshed. Multiple
+-- Mog-House bag checks inside the same operation can then share the one fresh poke.
+local function begin_nomad_operation()
+    nomad_moogle_ready = false
 end
 
 local function poke_nomad_moogle(npc)
@@ -81,13 +88,14 @@ local function poke_nomad_moogle(npc)
         ['Target Index'] = npc.index,
     })
 
-    nomad_moogle_poked = true
     block_nomad_moogle_menu = true
     packets.inject(packet)
 
     repeat
         coroutine.sleep(0.4)
     until not block_nomad_moogle_menu
+
+    nomad_moogle_ready = true
 end
 
 local function nomad_moogle()
@@ -108,7 +116,7 @@ local function nomad_moogle()
     for _, moogle_index in ipairs(nomad_moogles) do
         local moogle = windower.ffxi.get_mob_by_index(moogle_index)
         if moogle and (moogle.x - player.x)^2 + (moogle.y - player.y)^2 < 36 then
-            if not nomad_moogle_poked then
+            if not nomad_moogle_ready then
                 poke_nomad_moogle(moogle)
             end
             return moogle.name
@@ -221,9 +229,11 @@ find_items = function(ids, bag, limit)
         end
     end
 
-    -- If nothing was found, a nearby Nomad/Pilgrim Moogle can expose Mog House bags.
-    -- These bags do not flip Windower's enabled flag, so search them explicitly.
-    if found == 0 and not windower.ffxi.get_info().mog_house and nomad_moogle() then
+    -- A nearby Nomad/Pilgrim Moogle can expose Mog House bags. These bags do not
+    -- flip Windower's enabled flag, so search them explicitly whenever the request
+    -- still needs items. For //gets (limit=nil), this also means "all" really spans
+    -- ordinary bags plus Safe/Safe2/Locker instead of stopping after the first family.
+    if (not limit or limit > 0) and not windower.ffxi.get_info().mog_house and nomad_moogle() then
         for bag_name, bag_index in all_bags_api:it() do
             if is_nomad_moogle_bag(bag_index) and search_bag(bag_index) then
                 return result, found
@@ -245,7 +255,7 @@ windower.register_event("addon command", function(command, arg2, ...)
   1. Delay <delay> - Sets the time delay.
   2. AutoNinjaTools - Toggles automatically getting ninja tools (Shortened ant)
   3. AutoItems - Toggles automatically getting items from bags (shortened ai)
-  4. UseUniversalTool <spell> - Toggles using universal ninja tools for <spell> (shortened uut)
+  4. UseUniversalTool <spell> - Toggles use of only universal tools for the given spell. Do not include :ichi or :ni suffixes.
      i.e. uut katon  - will toggle katon either true or false depending on your setting
      all defaulted false.
   5. AutoStack - Toggles utomatically stacking items in the destination bag (shortened as, defaults true)
@@ -305,6 +315,8 @@ end
 windower.register_event('unhandled command', function(command, ...)
     local args = L{...}:map(string.lower-{string.encoding.shift_jis})
     if handled_commands:contains(command) then
+        begin_nomad_operation()
+
         local count
         if command:endswith('s') then
             command = command:sub(1, -2)
@@ -451,6 +463,10 @@ collect_item = function(id, items)
     if active:contains(id) then
         return true
     end
+
+    -- Each automatic collection attempt is its own storage operation. Refresh the
+    -- Nomad/Pilgrim session before searching disabled Mog House bags.
+    begin_nomad_operation()
 
     -- Check for all items
     local match = find_items(S{id}, nil, 1):it()()
